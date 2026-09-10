@@ -1,0 +1,20 @@
+# Project Meezan dependencies (per docs/FRD.md).
+# Pin versions once the environment is verified working end-to-end;
+# left unpinned for now since no adapter/LLM code has been implemented yet.
+
+streamlit
+pydantic
+python-dotenv
+pyyaml
+requests
+
+# DeepSeek client (OpenAI-compatible API)
+openai
+
+# Data source adapters (Section 8)
+praw
+pytrends
+wbdata
+
+# Testing (Section 11)
+pytest
