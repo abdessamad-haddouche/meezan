@@ -11,14 +11,26 @@ market defined in `config/market_profiles.yaml`. A market with no
 configured indicators has nothing to fetch or retry (the gap is missing
 configuration, not a transient failure), so `collect()` returns the
 "unavailable" AdapterResult directly for it, without ever calling the API.
+
+wbdata's own default HTTP session sets no request timeout at all, and
+(in wbdata 1.1.0) `Client(session=...)` is accepted but never actually
+wired into its internal `Fetcher` — so passing a session through wbdata's
+own public API doesn't fix this. DEFAULT_FETCH_FN works around it by
+building a client the normal way, then swapping in a timeout-enforcing
+session directly on its `.fetcher` afterward, so a slow/unresponsive World
+Bank endpoint fails into with_retry's existing retry logic instead of
+hanging indefinitely.
 """
 
 from datetime import datetime, timezone
 from typing import Callable
 
+import requests
 import wbdata
 
 from adapters.base import UNAVAILABLE, AdapterResult, Evidence, with_retry
+
+DEFAULT_TIMEOUT_SECONDS = 10
 
 # World Bank indicator codes: https://data.worldbank.org/indicator
 GDP_PER_CAPITA_USD = "NY.GDP.PCAP.CD"
@@ -37,6 +49,24 @@ MARKET_INDICATORS: dict[str, tuple[str, dict[str, str]]] = {
 }
 
 WorldBankFetchFn = Callable[..., list[dict]]
+
+
+class _TimeoutSession(requests.Session):
+    """A requests.Session that always applies a timeout, since wbdata's own
+    session never sets one and gives no other way to configure it."""
+
+    def request(self, method, url, **kwargs):
+        kwargs.setdefault("timeout", DEFAULT_TIMEOUT_SECONDS)
+        return super().request(method, url, **kwargs)
+
+
+def _build_default_fetch_fn() -> WorldBankFetchFn:
+    client = wbdata.Client()
+    client.fetcher.session = _TimeoutSession()
+    return client.get_data
+
+
+DEFAULT_FETCH_FN: WorldBankFetchFn = _build_default_fetch_fn()
 
 
 def _most_recent_value(observations: list[dict]) -> dict | None:
@@ -122,5 +152,5 @@ def collect(market: str, fetch_fn: WorldBankFetchFn | None = None) -> AdapterRes
         return dict(UNAVAILABLE)
 
     country_code, indicators = config
-    fn = fetch_fn or wbdata.get_data
+    fn = fetch_fn or DEFAULT_FETCH_FN
     return _collect_indicators(country_code, indicators, fn)

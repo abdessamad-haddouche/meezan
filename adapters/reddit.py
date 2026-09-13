@@ -15,6 +15,11 @@ import praw
 from adapters.base import Evidence, with_retry
 
 DEFAULT_LIMIT = 100
+# PRAW/prawcore already default to this same value (praw.ini) if omitted;
+# spelled out explicitly so a slow/unresponsive Reddit API can't hang a
+# sweep indefinitely (it fails into with_retry's existing retry logic
+# instead).
+DEFAULT_TIMEOUT_SECONDS = 16
 
 
 def _build_client() -> praw.Reddit:
@@ -22,6 +27,7 @@ def _build_client() -> praw.Reddit:
         client_id=os.environ["REDDIT_CLIENT_ID"],
         client_secret=os.environ["REDDIT_CLIENT_SECRET"],
         user_agent=os.environ.get("REDDIT_USER_AGENT", "meezan/0.1"),
+        timeout=DEFAULT_TIMEOUT_SECONDS,
     )
 
 

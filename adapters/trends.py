@@ -14,10 +14,15 @@ from pytrends.request import TrendReq
 from adapters.base import Evidence, with_retry
 
 DEFAULT_TIMEFRAME = "today 12-m"
+# pytrends already defaults to this same (connect, read) timeout if
+# omitted; spelled out explicitly so a slow/unresponsive endpoint can't
+# hang a sweep indefinitely (it fails into with_retry's existing retry
+# logic instead).
+DEFAULT_TIMEOUT_SECONDS = (2, 5)
 
 
 def _build_client() -> TrendReq:
-    return TrendReq(hl="en-US", tz=360)
+    return TrendReq(hl="en-US", tz=360, timeout=DEFAULT_TIMEOUT_SECONDS)
 
 
 @with_retry(max_attempts=3, base_delay=1.0)

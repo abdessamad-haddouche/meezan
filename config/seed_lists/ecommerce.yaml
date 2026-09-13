@@ -1,0 +1,14 @@
+# Project Meezan — ecommerce seed niches (docs/FRD.md, Section 2 / Task 12).
+#
+# Per Section 3 rule 4 ("a category is a config, not a code branch"), this
+# file — not new Python — is how an ecommerce sweep's starting niches are
+# defined. `sweep_engine.expand_niches()` combines these with DeepSeek's
+# niche-expansion suggestions (Section 7.1) at sweep time.
+
+category: ecommerce
+seed_niches:
+  - baby products
+  - modest wear
+  - cosmetics
+  - pet products
+  - home fitness equipment
