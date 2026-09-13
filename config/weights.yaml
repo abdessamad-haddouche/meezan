@@ -1,0 +1,19 @@
+# Project Meezan — scoring weights (docs/FRD.md, Section 6, Task 11).
+#
+# Dimension names match the fields Task 10's cheap pass and Task 13's deep
+# pass actually produce (`margin_signal`, not the "margin" shorthand used
+# in Section 6's prose table).
+
+weights:
+  market_demand: 0.20
+  competitive_intensity: 0.15
+  margin_signal: 0.20
+  cost_to_start: 0.15
+  complexity: 0.10
+  regulatory_friction: 0.10
+  trend_momentum: 0.10
+
+research_priority_thresholds:
+  research_this_week_percentile: 0.85   # top 15%
+  revisit_later_percentile: 0.30        # next 55%
+  # bottom 30% = deprioritize
