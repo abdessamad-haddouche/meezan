@@ -1,9 +1,9 @@
 # Project Meezan — Streamlit entry point (docs/FRD.md, Section 10).
 #
-# Task 14 built the sidebar sweep trigger. Task 15 (this pass) builds the
-# main-area results view: a "View sweep" picker, ranked cards (default) with
-# a toggle to a sortable table, and filters over both. The per-idea evidence
-# expander and Deep Dive button are Task 16 — cards/rows here are read-only.
+# Task 14 built the sidebar sweep trigger. Task 15 built the main-area
+# results view: a "View sweep" picker, ranked cards (default) with a toggle
+# to a sortable table, and filters over both. Task 16 (this pass) adds the
+# per-card evidence expander and Deep Dive button.
 
 import sqlite3
 from pathlib import Path
@@ -12,6 +12,7 @@ import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
 
+from llm.deep_pass import deep_score
 from llm.deepseek_provider import DeepSeekProvider
 from sweep_engine import SEED_LISTS_DIR, load_seed_list, run_sweep
 
@@ -27,6 +28,8 @@ if "last_sweep_run_id" not in st.session_state:
     st.session_state.last_sweep_run_id = None
 if "last_sweep_tokens" not in st.session_state:
     st.session_state.last_sweep_tokens = None
+if "deep_dive_running_idea_id" not in st.session_state:
+    st.session_state.deep_dive_running_idea_id = None
 
 
 def _available_seed_lists() -> list[str]:
@@ -53,7 +56,7 @@ def load_ideas(sweep_run_id: int) -> pd.DataFrame:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
             """
-            SELECT name, description, composite_score, research_priority,
+            SELECT id, name, description, composite_score, research_priority,
                    margin_min_pct, margin_max_pct, cost_min_usd, cost_max_usd,
                    complexity, has_deep_pass
             FROM ideas
@@ -61,6 +64,44 @@ def load_ideas(sweep_run_id: int) -> pd.DataFrame:
             ORDER BY composite_score DESC
             """,
             (sweep_run_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+    return pd.DataFrame([dict(row) for row in rows])
+
+
+@st.cache_data
+def load_scores(idea_id: int) -> pd.DataFrame:
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            """
+            SELECT dimension, value, confidence, evidence_level, rationale, pass_type
+            FROM scores
+            WHERE idea_id = ?
+            ORDER BY pass_type, dimension
+            """,
+            (idea_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+    return pd.DataFrame([dict(row) for row in rows])
+
+
+@st.cache_data
+def load_evidence(idea_id: int) -> pd.DataFrame:
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            """
+            SELECT source_type, metric, value, confidence, source_url
+            FROM evidence
+            WHERE idea_id = ?
+            ORDER BY source_type, metric
+            """,
+            (idea_id,),
         ).fetchall()
     finally:
         conn.close()
@@ -86,7 +127,22 @@ def _display_cost(row: pd.Series) -> str:
     return "pending deep dive"
 
 
+def _run_deep_dive(idea_id: int, idea_name: str) -> None:
+    with st.spinner(f"Running deep dive for {idea_name!r}..."):
+        conn = sqlite3.connect(DB_PATH)
+        try:
+            deep_score(idea_id, conn)
+        finally:
+            conn.close()
+    st.session_state.deep_dive_running_idea_id = None
+    load_ideas.clear()
+    load_scores.clear()
+    load_evidence.clear()
+    st.rerun()
+
+
 def render_idea_card(row: pd.Series) -> None:
+    idea_id = int(row["id"])
     with st.container(border=True):
         st.subheader(row["name"])
         st.write(row["description_display"])
@@ -98,6 +154,59 @@ def render_idea_card(row: pd.Series) -> None:
         cols[3].metric("Cost to start", row["cost_display"])
         complexity = row["complexity"]
         cols[4].metric("Complexity", f"{complexity:.0f}" if pd.notna(complexity) else "—")
+
+        with st.expander("View evidence & reasoning"):
+            scores_df = load_scores(idea_id)
+            st.markdown("**Per-dimension scores**")
+            if scores_df.empty:
+                st.caption("No scores recorded yet.")
+            else:
+                st.dataframe(
+                    scores_df,
+                    width="stretch",
+                    hide_index=True,
+                    column_config={
+                        "dimension": st.column_config.TextColumn("Dimension"),
+                        "value": st.column_config.NumberColumn("Value", format="%.1f"),
+                        "confidence": st.column_config.NumberColumn("Confidence", format="%.2f"),
+                        "evidence_level": st.column_config.TextColumn("Evidence level"),
+                        "rationale": st.column_config.TextColumn("Rationale", width="large"),
+                        "pass_type": st.column_config.TextColumn("Pass"),
+                    },
+                )
+
+            evidence_df = load_evidence(idea_id)
+            st.markdown("**Evidence sources**")
+            if evidence_df.empty:
+                st.caption("No evidence recorded yet.")
+            else:
+                st.dataframe(
+                    evidence_df,
+                    width="stretch",
+                    hide_index=True,
+                    column_config={
+                        "source_type": st.column_config.TextColumn("Source"),
+                        "metric": st.column_config.TextColumn("Metric"),
+                        "value": st.column_config.TextColumn("Value"),
+                        "confidence": st.column_config.NumberColumn("Confidence", format="%.2f"),
+                        "source_url": st.column_config.LinkColumn("Source URL"),
+                    },
+                )
+
+        if row["has_deep_pass"]:
+            st.caption("Deep dive complete")
+        elif st.session_state.deep_dive_running_idea_id == idea_id:
+            _run_deep_dive(idea_id, row["name"])
+        else:
+            deep_dive_running = st.session_state.deep_dive_running_idea_id is not None
+            deep_dive_clicked = st.button(
+                "Deep Dive",
+                key=f"deep_dive_{idea_id}",
+                disabled=deep_dive_running,
+            )
+            if deep_dive_clicked:
+                st.session_state.deep_dive_running_idea_id = idea_id
+                st.rerun()
 
 
 with st.sidebar:
