@@ -2,10 +2,12 @@
 #
 # Task 14 built the sidebar sweep trigger. Task 15 built the main-area
 # results view: a "View sweep" picker, ranked cards (default) with a toggle
-# to a sortable table, and filters over both. Task 16 (this pass) adds the
-# per-card evidence expander and Deep Dive button.
+# to a sortable table, and filters over both. Task 16 added the per-card
+# evidence expander and Deep Dive button. Task 17 (this pass) adds CSV
+# export of the filtered list.
 
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -310,6 +312,29 @@ else:
         )
 
         st.caption(f"{len(filtered_df)} of {len(ideas_df)} ideas shown")
+
+        export_df = filtered_df[
+            [
+                "name",
+                "description",
+                "composite_score",
+                "research_priority",
+                "margin_min_pct",
+                "margin_max_pct",
+                "cost_min_usd",
+                "cost_max_usd",
+                "complexity",
+                "has_deep_pass",
+            ]
+        ]
+        timestamp = datetime.now().strftime("%Y%m%d")
+        st.download_button(
+            "Export CSV",
+            data=export_df.to_csv(index=False),
+            file_name=f"meezan_sweep_{selected_sweep_id}_{timestamp}.csv",
+            mime="text/csv",
+        )
+
         show_as_table = st.toggle("Show as table", value=False)
 
         if show_as_table:
